@@ -55,7 +55,7 @@ int main(int argc, char* argv[]) {
         CIDiagnostics.push_back(diagnoseFunction(cheapestInsertion, points));
         if (i < 10) { BFDiagnostics.push_back(diagnoseFunction(bruteForce, points)); }
         else { BFDiagnostics.push_back({NNDiagnostics.back().route, static_cast<float>(0.712 * sqrt(i * 100)), 0}); }
-        std::cout << '%' << std::flush;
+        std::cout << '~' << std::flush;
     }
 
     drawTime(BFDiagnostics, NNDiagnostics, CIDiagnostics);
