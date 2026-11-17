@@ -25,10 +25,16 @@ struct Diagnostics {
 void drawRoute(vP& route, std::string filename);
 float calculateRouteLength(vP& route);
 Diagnostics diagnoseFunction(const std::function<vP(vP&)>& fn, vP& points);
+QLineSeries* makeSeries(const std::vector<Diagnostics>& diagnostics, const QString& name, bool plotTime,
+                        bool stopAtZero);
+void drawChart(const std::vector<QLineSeries*>& allSeries, const QString& yTitle, const QString& filename,
+               double yMax);
 void drawTime(const std::vector<Diagnostics>& BFDiagnostics, const std::vector<Diagnostics>& NNDiagnostics,
-              const std::vector<Diagnostics>& CIDiagnostics);
+              const std::vector<Diagnostics>& CIDiagnostics, const std::vector<Diagnostics>& NMDiagnostics,
+              const std::vector<Diagnostics>& CHDiagnostics);
 void drawLength(const std::vector<Diagnostics>& BFDiagnostics, const std::vector<Diagnostics>& NNDiagnostics,
-                const std::vector<Diagnostics>& CIDiagnostics);
+                const std::vector<Diagnostics>& CIDiagnostics, const std::vector<Diagnostics>& NMDiagnostics,
+                const std::vector<Diagnostics>& CHDiagnostics);
 
 int main(int argc, char* argv[]) {
     // boilerplate
@@ -46,6 +52,8 @@ int main(int argc, char* argv[]) {
     std::vector<Diagnostics> BFDiagnostics;
     std::vector<Diagnostics> NNDiagnostics;
     std::vector<Diagnostics> CIDiagnostics;
+    std::vector<Diagnostics> NMDiagnostics;
+    std::vector<Diagnostics> CHDiagnostics;
 
     for (int i = 5; i <= RANGE; i += STEP) { std::cout << '#'; }
     std::cout << '\n';
@@ -53,17 +61,21 @@ int main(int argc, char* argv[]) {
         auto points = generatePoints(i);
         NNDiagnostics.push_back(diagnoseFunction(nearestNeighbour, points));
         CIDiagnostics.push_back(diagnoseFunction(cheapestInsertion, points));
+        NMDiagnostics.push_back(diagnoseFunction(nearestMerge, points));
+        CHDiagnostics.push_back(diagnoseFunction(convexHullInsertion, points));
         if (i < 10) { BFDiagnostics.push_back(diagnoseFunction(bruteForce, points)); }
         else { BFDiagnostics.push_back({NNDiagnostics.back().route, static_cast<float>(0.712 * sqrt(i * 100)), 0}); }
         std::cout << '~' << std::flush;
     }
 
-    drawTime(BFDiagnostics, NNDiagnostics, CIDiagnostics);
-    drawLength(BFDiagnostics, NNDiagnostics, CIDiagnostics);
+    drawTime(BFDiagnostics, NNDiagnostics, CIDiagnostics, NMDiagnostics, CHDiagnostics);
+    drawLength(BFDiagnostics, NNDiagnostics, CIDiagnostics, NMDiagnostics, CHDiagnostics);
 
     // drawRoute(BFDiagnostics[0].route, "BruteForce");
     // drawRoute(NNDiagnostics.back().route, "NearestNeighbour");
     // drawRoute(CIDiagnostics.back().route, "CheapestInsertion");
+    // drawRoute(NMDiagnostics.back().route, "NearestMerge");
+    // drawRoute(CHDiagnostics.back().route, "ConvexHullInsertion");
 
     return app.exec();
 }
@@ -121,52 +133,41 @@ Diagnostics diagnoseFunction(const std::function<vP(vP&)>& fn, vP& points) {
     return {solution, length, duration};
 }
 
-void drawTime(const std::vector<Diagnostics>& BFDiagnostics, const std::vector<Diagnostics>& NNDiagnostics,
-              const std::vector<Diagnostics>& CIDiagnostics) {
-    auto* series1 = new QLineSeries;
-    for (const auto& route : BFDiagnostics) {
-        if (route.duration == 0) { break; }
-        series1->append({static_cast<float>(route.route.size()) - 1.0, route.duration});
+// Builds one line on a chart: x = number of points, y = either time or length.
+// stopAtZero is for brute force, whose entries past the cut-off have no real time.
+QLineSeries* makeSeries(const std::vector<Diagnostics>& diagnostics, const QString& name, bool plotTime,
+                        bool stopAtZero) {
+    auto* series = new QLineSeries;
+    for (const auto& d : diagnostics) {
+        float value = plotTime ? d.duration : d.length;
+        if (stopAtZero && value == 0) { break; }
+        series->append(static_cast<float>(d.route.size()) - 1.0, value);
     }
-    series1->setName("BruteForce");
+    series->setName(name);
+    return series;
+}
 
-    auto* series2 = new QLineSeries;
-    for (const auto& route : NNDiagnostics) {
-        series2->append({static_cast<float>(route.route.size()) - 1.0, route.duration});
-    }
-    series2->setName("NearestNeighbour");
-
-    auto* series3 = new QLineSeries;
-    for (const auto& route : CIDiagnostics) {
-        series3->append({static_cast<float>(route.route.size()) - 1.0, route.duration});
-    }
-    series3->setName("CheapestInsertion");
-
+// Puts the series on a chart with the usual axes, shows it and saves it as a png.
+// yMax <= 0 means "let Qt choose".
+void drawChart(const std::vector<QLineSeries*>& allSeries, const QString& yTitle, const QString& filename,
+               double yMax) {
     auto* chart = new QChart;
-    chart->addSeries(series1);
-    chart->addSeries(series2);
-    chart->addSeries(series3);
-    // chart->setTitle(QString::fromStdString("Computation Time of Different TSP Algorithms"));
+    for (auto* series : allSeries) { chart->addSeries(series); }
     chart->layout()->setContentsMargins(0, 0, 0, 0);
-
-    // chart->createDefaultAxes();
 
     auto* xAxis = new QValueAxis;
     auto* yAxis = new QValueAxis;
     xAxis->setLabelFormat("%d");
     yAxis->setLabelFormat("%d");
-    // xAxis->setRange(0, 10);
-    // yAxis->setRange(0, 10);
+    if (yMax > 0) { yAxis->setRange(0, yMax); }
     xAxis->setTitleText("Number of Points");
-    yAxis->setTitleText("Time Taken to Compute (milliseconds)");
+    yAxis->setTitleText(yTitle);
     chart->addAxis(xAxis, Qt::AlignBottom);
     chart->addAxis(yAxis, Qt::AlignLeft);
-    series2->attachAxis(xAxis);
-    series2->attachAxis(yAxis);
-    series3->attachAxis(xAxis);
-    series3->attachAxis(yAxis);
-    series1->attachAxis(xAxis);
-    series1->attachAxis(yAxis);
+    for (auto* series : allSeries) {
+        series->attachAxis(xAxis);
+        series->attachAxis(yAxis);
+    }
 
     auto* chartView = new QChartView(chart);
     chartView->setRenderHint(QPainter::Antialiasing);
@@ -174,63 +175,31 @@ void drawTime(const std::vector<Diagnostics>& BFDiagnostics, const std::vector<D
     chartView->show();
 
     QPixmap pixmap = chartView->grab();
-    const QString QFilename = QString::fromStdString("ComputationTime") + ".png";
-    pixmap.save(QFilename, "PNG");
+    pixmap.save(filename + ".png", "PNG");
+}
+
+void drawTime(const std::vector<Diagnostics>& BFDiagnostics, const std::vector<Diagnostics>& NNDiagnostics,
+              const std::vector<Diagnostics>& CIDiagnostics, const std::vector<Diagnostics>& NMDiagnostics,
+              const std::vector<Diagnostics>& CHDiagnostics) {
+    drawChart({makeSeries(BFDiagnostics, "BruteForce", true, true),
+               makeSeries(NNDiagnostics, "NearestNeighbour", true, false),
+               makeSeries(CIDiagnostics, "CheapestInsertion", true, false),
+               makeSeries(NMDiagnostics, "NearestMerge", true, false),
+               makeSeries(CHDiagnostics, "ConvexHullInsertion", true, false)},
+              "Time Taken to Compute (microseconds)", "ComputationTime", 0);
 }
 
 void drawLength(const std::vector<Diagnostics>& BFDiagnostics, const std::vector<Diagnostics>& NNDiagnostics,
-                const std::vector<Diagnostics>& CIDiagnostics) {
-    auto* series1 = new QLineSeries;
-    for (const auto& route : BFDiagnostics) {
-        if (route.length == 0) { break; }
-        series1->append({static_cast<float>(route.route.size()) - 1.0, route.length});
-    }
-    series1->setName("BruteForce(Estimation)");
+                const std::vector<Diagnostics>& CIDiagnostics, const std::vector<Diagnostics>& NMDiagnostics,
+                const std::vector<Diagnostics>& CHDiagnostics) {
+    // y axis goes up to the longest final route
+    float yMax = std::max({NNDiagnostics.back().length, CIDiagnostics.back().length, NMDiagnostics.back().length,
+                           CHDiagnostics.back().length});
 
-    auto* series2 = new QLineSeries;
-    for (const auto& route : NNDiagnostics) {
-        series2->append({static_cast<float>(route.route.size()) - 1.0, route.length});
-    }
-    series2->setName("NearestNeighbour");
-
-    auto* series3 = new QLineSeries;
-    for (const auto& route : CIDiagnostics) {
-        series3->append({static_cast<float>(route.route.size()) - 1.0, route.length});
-    }
-    series3->setName("CheapestInsertion");
-
-    auto* chart = new QChart;
-    chart->addSeries(series1);
-    chart->addSeries(series2);
-    chart->addSeries(series3);
-    // chart->setTitle(QString::fromStdString("Length of Different TSP Algorithms"));
-    chart->layout()->setContentsMargins(0, 0, 0, 0);
-
-    // chart->createDefaultAxes();
-
-    auto* xAxis = new QValueAxis;
-    auto* yAxis = new QValueAxis;
-    xAxis->setLabelFormat("%d");
-    yAxis->setLabelFormat("%d");
-    // xAxis->setRange(0, 10);
-    yAxis->setRange(0, std::max(NNDiagnostics.back().length, CIDiagnostics.back().length));
-    xAxis->setTitleText("Number of Points");
-    yAxis->setTitleText("Length (Arbitrary units)");
-    chart->addAxis(xAxis, Qt::AlignBottom);
-    chart->addAxis(yAxis, Qt::AlignLeft);
-    series1->attachAxis(xAxis);
-    series1->attachAxis(yAxis);
-    series2->attachAxis(xAxis);
-    series2->attachAxis(yAxis);
-    series3->attachAxis(xAxis);
-    series3->attachAxis(yAxis);
-
-    auto* chartView = new QChartView(chart);
-    chartView->setRenderHint(QPainter::Antialiasing);
-    chartView->resize(700, 700);
-    chartView->show();
-
-    QPixmap pixmap = chartView->grab();
-    const QString QFilename = QString::fromStdString("RouteLength") + ".png";
-    pixmap.save(QFilename, "PNG");
+    drawChart({makeSeries(BFDiagnostics, "BruteForce(Estimation)", false, false),
+               makeSeries(NNDiagnostics, "NearestNeighbour", false, false),
+               makeSeries(CIDiagnostics, "CheapestInsertion", false, false),
+               makeSeries(NMDiagnostics, "NearestMerge", false, false),
+               makeSeries(CHDiagnostics, "ConvexHullInsertion", false, false)},
+              "Length (Arbitrary units)", "RouteLength", yMax);
 }
