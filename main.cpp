@@ -55,7 +55,7 @@ int main(int argc, char* argv[]) {
     std::vector<Diagnostics> NMDiagnostics;
     std::vector<Diagnostics> CHDiagnostics;
 
-    for (int i = 5; i <= RANGE; i += STEP) { std::cout << '#'; }
+    for (int i = 5; i <= RANGE; i += STEP) { std::cout << '#'; } // loading bar
     std::cout << '\n';
     for (int i = 5; i <= RANGE; i += STEP) {
         auto points = generatePoints(i);
@@ -159,7 +159,24 @@ void drawChart(const std::vector<QLineSeries*>& allSeries, const QString& yTitle
     auto* yAxis = new QValueAxis;
     xAxis->setLabelFormat("%d");
     yAxis->setLabelFormat("%d");
-    if (yMax > 0) { yAxis->setRange(0, yMax); }
+
+    // axes made by hand don't scale to the data (Qt defaults to 0-10), so work out the ranges ourselves
+    double xMin = 0;
+    double xMaxData = 0;
+    double yMaxData = 0;
+    bool first = true;
+    for (auto* series : allSeries) {
+        for (const QPointF& point : series->points()) {
+            if (first || point.x() < xMin) { xMin = point.x(); }
+            if (first || point.x() > xMaxData) { xMaxData = point.x(); }
+            if (first || point.y() > yMaxData) { yMaxData = point.y(); }
+            first = false;
+        }
+    }
+    xAxis->setRange(xMin, std::max(xMaxData, xMin + 1));
+    yAxis->setRange(0, yMax > 0 ? yMax : std::max(yMaxData, 1.0));
+    xAxis->applyNiceNumbers();
+    yAxis->applyNiceNumbers();
     xAxis->setTitleText("Number of Points");
     yAxis->setTitleText(yTitle);
     chart->addAxis(xAxis, Qt::AlignBottom);
@@ -168,6 +185,8 @@ void drawChart(const std::vector<QLineSeries*>& allSeries, const QString& yTitle
         series->attachAxis(xAxis);
         series->attachAxis(yAxis);
     }
+    chart->layout()->setContentsMargins(0, 0, 0, 0);
+    chart->setBackgroundRoundness(0);
 
     auto* chartView = new QChartView(chart);
     chartView->setRenderHint(QPainter::Antialiasing);
